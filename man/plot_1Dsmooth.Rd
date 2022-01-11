@@ -4,7 +4,14 @@
 \alias{plot_1Dsmooth}
 \title{Plot 1D smooth effects for \code{\link[mgcv]{gam}} models}
 \usage{
-plot_1Dsmooth(model, plot_ci = TRUE, select, alpha = 0.05, ylim = NULL)
+plot_1Dsmooth(
+  model,
+  plot_ci = TRUE,
+  select,
+  alpha = 0.05,
+  ylim = NULL,
+  return_plotData = FALSE
+)
 }
 \arguments{
 \item{model}{GAM model fitted with \code{\link[mgcv]{gam}} or
@@ -18,6 +25,9 @@ plot_1Dsmooth(model, plot_ci = TRUE, select, alpha = 0.05, ylim = NULL)
 95\% CIs.}
 
 \item{ylim}{Optional limits of the y-axis.}
+
+\item{return_plotData}{If TRUE, the dataset prepared for plotting is
+returned. Defaults to FALSE.}
 }
 \value{
 ggplot object

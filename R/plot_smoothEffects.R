@@ -14,7 +14,9 @@
 #' @param alpha \code{(1-alpha)} CIs are calculated. The default 0.05 leads to
 #' 95% CIs.
 #' @param ylim Optional limits of the y-axis.
-#' 
+#' @param return_plotData If TRUE, the dataset prepared for plotting is
+#' returned. Defaults to FALSE.
+#'  
 #' @return ggplot object
 #' 
 #' @importFrom grDevices gray
@@ -35,18 +37,19 @@
 #' plot_1Dsmooth(model, select = 2)
 #' 
 plot_1Dsmooth <- function(model, plot_ci = TRUE, select, alpha = 0.05,
-                          ylim = NULL) {
+                          ylim = NULL, return_plotData = FALSE) {
   
   checkmate::assert_class(model, classes = "gam")
   checkmate::assert_logical(plot_ci)
   checkmate::assert_numeric(select, lower = 1)
   checkmate::assert_numeric(alpha, lower = 0, upper = 1)
   checkmate::assert_numeric(ylim, len = 2, null.ok = TRUE)
+  checkmate::assert_logical(return_plotData, len = 1)
   
   
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
   fit <- se <- fit_exp <- se_exp <- CI_lower <- CI_upper <- CI_lower_exp <-
-    CI_upper_exp <- x <- y <- NULL
+    CI_upper_exp <- x <- y <- y_exp <- NULL
   
   
   used_logLink <- model$family[[2]] %in% c("log","logit")
@@ -55,21 +58,21 @@ plot_1Dsmooth <- function(model, plot_ci = TRUE, select, alpha = 0.05,
   plotObject <- get_plotGAMobject(model)
   
   plotObject <- plotObject[[select]]
-  plot_dat  <- data.frame(x   = plotObject$x,
-                          fit = plotObject$fit,
-                          se  = plotObject$se) %>% 
-    mutate(CI_lower = fit - qnorm(1 - alpha/2)*se,
-           CI_upper = fit + qnorm(1 - alpha/2)*se)
+  plot_dat  <- data.frame(x  = plotObject$x,
+                          y  = plotObject$fit,
+                          se = plotObject$se) %>% 
+    mutate(CI_lower = y - qnorm(1 - alpha/2)*se,
+           CI_upper = y + qnorm(1 - alpha/2)*se)
   
   if (used_logLink) {
     # confidence intervals on exp scale are computed based on the delta method
     plot_dat <- plot_dat %>%
-      mutate(fit_exp = exp(fit),
-             se_exp  = sqrt(se^2 * exp(fit)^2)) %>%
-      mutate(CI_lower_exp = fit_exp - qnorm(1 - alpha/2) * se_exp,
-             CI_upper_exp = fit_exp + qnorm(1 - alpha/2) * se_exp) %>% 
-      select(-fit, -se, -CI_lower, -CI_upper) %>% 
-      dplyr::rename(fit = fit_exp, se = se_exp,
+      mutate(y_exp = exp(y),
+             se_exp  = sqrt(se^2 * exp(y)^2)) %>%
+      mutate(CI_lower_exp = y_exp - qnorm(1 - alpha/2) * se_exp,
+             CI_upper_exp = y_exp + qnorm(1 - alpha/2) * se_exp) %>% 
+      select(-y, -se, -CI_lower, -CI_upper) %>% 
+      dplyr::rename(y = y_exp, se = se_exp,
                     CI_lower = CI_lower_exp, CI_upper = CI_upper_exp)
     
     # correct negative CI_lower borders
@@ -81,17 +84,17 @@ plot_1Dsmooth <- function(model, plot_ci = TRUE, select, alpha = 0.05,
     }
   }
   
-  if (plot_ci) {
-    poly_dat <- data.frame(x = c(plot_dat$x, rev(plot_dat$x)),
-                           y = c(plot_dat$CI_lower, rev(plot_dat$CI_upper)))
+  if (return_plotData) {
+    return(plot_dat)
   }
   
-  gg <- ggplot(plot_dat, aes(x = x, y = fit))
+  # plot
+  gg <- ggplot(plot_dat, aes(x = x, y = y))
   if (plot_ci) {
-    gg <- gg + geom_polygon(data = poly_dat, aes(x = x, y = y), fill = gray(0.75))
+    gg <- gg + geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper), fill = gray(0.75))
   }
   gg <- gg + 
-    geom_hline(yintercept = ifelse(used_logLink, 1, 0), col = "firebrick2", lty = 2) +
+    geom_hline(yintercept = ifelse(used_logLink, 1, 0), col = gray(0.3), lty = 2) +
     geom_line() + xlab(plotObject$xlab) +
     scale_y_continuous(trans = ifelse(used_logLink, "log2", "identity"),
                        name  = ylab, limits = ylim)

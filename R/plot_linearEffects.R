@@ -8,6 +8,14 @@
 #' automatically performs an exponential transformation of the effect.
 #' 
 #' @inheritParams extract_summary_linearEffects
+#' @param variables Optional character vector of variable names specifying which
+#' effects should be plotted. The order of the vector corresponds to
+#' the order in the effect plot. If the argument is not specified, all linear
+#' effects are plotted according to the order of their appearance in the model
+#' output.
+#' @param return_plotData If TRUE, the dataset prepared for plotting is
+#' returned. Defaults to FALSE.
+#' 
 #' 
 #' @return ggplot object
 #' 
@@ -27,9 +35,11 @@
 #' 
 #' plot_linearEffects(model)
 #' 
-plot_linearEffects <- function(model) {
+plot_linearEffects <- function(model, variables = NULL,
+                               return_plotData = FALSE) {
   
   checkmate::assert_class(model, classes = "gam")
+  checkmate::assert_character(variables, null.ok = TRUE)
   
   
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
@@ -49,6 +59,10 @@ plot_linearEffects <- function(model) {
   }
   # remove the intercept
   plot_dat <- plot_dat[-1,]
+  # select variables to plot:
+  if (!is.null(variables)) {
+    plot_dat <- plot_dat %>% filter(vargroup %in% variables)
+  }
   # remove the vargroup label from the coefficient labels for categorical variables
   plot_dat$param <- as.character(plot_dat$param)
   cat_coefs      <- which(nchar(plot_dat$param) > nchar(plot_dat$vargroup))
@@ -58,15 +72,25 @@ plot_linearEffects <- function(model) {
                                         100)
   }
   
+  # reorder dataset according to specified variable vector
+  var_levels <- if(is.null(variables)) unique(plot_dat$vargroup) else variables
+  plot_dat <- plot_dat %>%
+     mutate(vargroup = factor(x = vargroup, levels = var_levels)) %>%
+     arrange(vargroup)
+  
   # final preparations
   if (used_logLink) {
     plot_dat <- plot_dat %>% select(-coef, -CI_lower, -CI_upper) %>%
       dplyr::rename(coef = coef_exp, CI_lower = CI_lower_exp, CI_upper = CI_upper_exp)
   }
   
+  if (return_plotData) {
+    return(plot_dat)
+  }
+  
   # create plot
   gg <- ggplot(plot_dat, mapping = aes(x = param, y = coef)) +
-    geom_hline(yintercept = ifelse(used_logLink, 1, 0), col = "firebrick2", lty = 2) +
+    geom_hline(yintercept = ifelse(used_logLink, 1, 0), col = gray(0.3), lty = 2) +
     geom_pointrange(mapping = aes(ymin = CI_lower, ymax = CI_upper, col = vargroup), size = 1) +
     geom_point(mapping = aes(col = vargroup), size = 1) +
     scale_y_continuous(trans = ifelse(used_logLink, "log2", "identity"),

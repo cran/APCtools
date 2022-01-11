@@ -13,11 +13,20 @@ test_that("plot_linearEffects", {
                          residence_region,
                        family = Gamma(link = "log"), data = travel)
   
+  # plot_linearEffects
   gg1 <- plot_linearEffects(model)
-  gg2 <- plot_linearEffects(model_logLink)
+  gg2 <- plot_linearEffects(model,
+                            variables = c("residence_region", "household_size"))
+  gg3 <- plot_linearEffects(model_logLink)
   
   expect_s3_class(gg1, class = c("gg","ggplot"))
   expect_s3_class(gg2, class = c("gg","ggplot"))
+  expect_s3_class(gg3, class = c("gg", "ggplot"))
+  
+  # plot_linearEffects - return_plotData
+  gg_dat1 <- plot_linearEffects(model, return_plotData = TRUE)
+  expect_data_frame(gg_dat1)
+  
 })
 
 
@@ -45,6 +54,11 @@ test_that("plot_1Dsmooth", {
   expect_s3_class(gg2, class = c("gg","ggplot"))
   
   expect_error(plot_1Dsmooth(model, select = 20))
+  
+  # plot_1Dsmooth - return_plotData
+  gg_dat1 <- plot_1Dsmooth(model, select = 2, return_plotData = TRUE)
+  expect_data_frame(gg_dat1)
+  
   
   # get_plotGAMobject
   x <- APCtools:::get_plotGAMobject(model)

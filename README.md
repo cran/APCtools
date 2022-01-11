@@ -7,12 +7,12 @@
 status](https://github.com/bauer-alex/APCtools/workflows/R-CMD-check/badge.svg)](https://github.com/bauer-alex/APCtools/actions)
 [![Codecov test
 coverage](https://codecov.io/gh/bauer-alex/APCtools/branch/main/graph/badge.svg?token=KrjDYWRi2W)](https://app.codecov.io/gh/bauer-alex/APCtools)
-[![GPL-3
-license](https://img.shields.io/badge/license-GPL--3.0-brightgreen.svg)](https://opensource.org/licenses/GPL-3.0)
+[![](https://cranlogs.r-pkg.org/badges/grand-total/APCtools)](https://cran.r-project.org/package=APCtools)
+[![MIT
+license](https://img.shields.io/badge/license-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->
 
-Routines and visualization techniques for descriptive and model-based
-APC analyses.
+Routines for Descriptive and Model-Based APC Analysis
 
 -   Authors: [Alexander
     Bauer](https://www.en.stablab.stat.uni-muenchen.de/people/doktoranden/bauer1/index.html),
@@ -21,7 +21,7 @@ APC analyses.
     [Hawre
     Jalal](https://www.publichealth.pitt.edu/home/directory/hawre-jalal)
 -   Contributors: Pauline Hohenemser
--   Version: 1.0
+-   Version: 1.0.0
 
 ## Overview
 
