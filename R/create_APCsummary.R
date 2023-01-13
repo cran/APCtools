@@ -30,19 +30,25 @@
 #' library(mgcv)
 #' 
 #' data(travel)
+#' 
+#' # create the summary table for one model
 #' model_pure <- gam(mainTrip_distance ~ te(age, period), data = travel)
+#' create_APCsummary(model_pure, dat = travel)
+#' 
+#' # create the summary table for multiple models
 #' model_cov  <- gam(mainTrip_distance ~ te(age, period) + s(household_income),
 #'                   data = travel)
-#' 
 #' model_list <- list("pure model"      = model_pure,
 #'                    "covariate model" = model_cov)
-#' 
 #' create_APCsummary(model_list, dat = travel)
 #' 
 create_APCsummary <- function(model_list, dat, digits = 2, apc_range = NULL,
                               ...) {
   
-  checkmate::assert_list(model_list, types = "gam")
+  checkmate::assert_choice(class(model_list)[1], choices = c("list","gam"))
+  if (class(model_list)[1] == "list") {
+    checkmate::assert_list(model_list, types = "gam")
+  }
   checkmate::assert_data_frame(dat)
   checkmate::assert_number(digits, lower = 0)
   checkmate::assert_list(apc_range, types = "numeric", max.len = 3,
@@ -53,6 +59,11 @@ create_APCsummary <- function(model_list, dat, digits = 2, apc_range = NULL,
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
   model <- NULL
   
+  
+  # reformat 'model_list' to a list, if only one model object was specified
+  if (class(model_list)[1] == "gam") {
+    model_list <- list(model_list)
+  }
   
   # retrieve model labels
   if (!is.null(names(model_list))) {
@@ -110,7 +121,8 @@ create_oneAPCsummaryTable <- function(model, dat, apc_range = NULL) {
   # retrieve datasets with the marginal effects
   dat_list <- plot_marginalAPCeffects(model, dat, return_plotData = TRUE)
   
-  used_logLink <- model$family[[2]] %in% c("log","logit")
+  used_logLink <- (model$family[[2]] %in% c("log","logit")) |
+    grepl("Ordered Categorical", model$family[[1]])
   
   vars <- c("age","period","cohort")
   

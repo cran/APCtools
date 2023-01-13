@@ -20,6 +20,7 @@
 #' @param model_list list of APC models
 #' @param digits number of displayed digits
 #' @param ... additional arguments to \code{\link[knitr]{kable}}
+#' @inheritParams extract_summary_linearEffects
 #' 
 #' @return List of tables created with \code{\link[knitr]{kable}}.
 #' 
@@ -39,7 +40,8 @@
 #' 
 #' create_modelSummary(list(model), dat = travel)
 #' 
-create_modelSummary <- function(model_list, digits = 2, ...) {
+create_modelSummary <- function(model_list, digits = 2,
+                                method_expTransform = "simple", ...) {
   
   checkmate::assert_list(model_list, types = "gam")
   checkmate::assert_number(digits, lower = 0)
@@ -59,7 +61,8 @@ create_modelSummary <- function(model_list, digits = 2, ...) {
   # create the summary table for all linear effects
   tab_linear <- lapply(1:length(model_list), function(i) {
     
-    extract_summary_linearEffects(model_list[[i]]) %>% 
+    extract_summary_linearEffects(model_list[[i]],
+                                  method_expTransform = method_expTransform) %>% 
       mutate(model = model_labels[i]) %>% 
       select(model, everything()) %>% 
       mutate(pvalue = case_when(param == "(Intercept)" ~ "-",
@@ -102,16 +105,23 @@ create_modelSummary <- function(model_list, digits = 2, ...) {
 #' \code{\link[mgcv]{bam}}.
 #' 
 #' If the model was estimated with a log or logit link, the function
-#' automatically performs an exponential transformation of the effect.
+#' automatically performs an exponential transformation of the effect,
+#' see argument \code{method_expTransform}.
 #' 
 #' @param model Model fitted with \code{\link[mgcv]{gam}} or \code{\link[mgcv]{bam}}.
+#' @param method_expTransform One of \code{c("simple","delta")}, stating if
+#' standard errors and confidence interval limits should be transformed by
+#' a simple exp transformation or using the delta method. The delta method can
+#' be unstable in situations and lead to negative confidence interval limits.
+#' Only used when the model was estimated with a log or logit link.
 #' 
 #' @import checkmate dplyr
 #' @importFrom mgcv summary.gam
 #' 
-extract_summary_linearEffects <- function(model) {
+extract_summary_linearEffects <- function(model, method_expTransform = "simple") {
   
   checkmate::assert_class(model, classes = "gam")
+  checkmate::assert_choice(method_expTransform, choices = c("simple","delta"))
   
   
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
@@ -119,7 +129,8 @@ extract_summary_linearEffects <- function(model) {
     CI_lower_exp <- CI_upper_exp <- pvalue <- NULL
   
   
-  used_logLink <- model$family[[2]] %in% c("log","logit")
+  used_logLink <- (model$family[[2]] %in% c("log","logit")) |
+    grepl("Ordered Categorical", model$family[[1]])
   
   x <- mgcv::summary.gam(model)$p.table
   dat <- data.frame(param    = row.names(x),
@@ -132,14 +143,26 @@ extract_summary_linearEffects <- function(model) {
     mutate(param = factor(param, levels = row.names(x)))
   
   if (used_logLink) {
-    # confidence intervals on exp scale are computed based on delta method
-    dat <- dat %>%
-      mutate(coef_exp = exp(coef),
-             se_exp = sqrt(se^2 * exp(coef)^2)) %>%
-      mutate(CI_lower_exp = coef_exp - qnorm(0.975) * se_exp,
-             CI_upper_exp = coef_exp + qnorm(0.975) * se_exp) %>%
-      select(param, coef, se, CI_lower, CI_upper,
-             coef_exp, se_exp, CI_lower_exp, CI_upper_exp, pvalue)
+    
+    if (method_expTransform == "simple") {
+      dat <- dat %>%
+        mutate(coef_exp     = exp(coef),
+               se_exp       = exp(se),
+               CI_lower_exp = exp(CI_lower),
+               CI_upper_exp = exp(CI_upper)) %>%
+        select(param, coef, se, CI_lower, CI_upper,
+               coef_exp, se_exp, CI_lower_exp, CI_upper_exp, pvalue)
+      
+    } else { # method_expTransform == "delta"
+      # confidence intervals on exp scale are computed based on delta method
+      dat <- dat %>%
+        mutate(coef_exp = exp(coef),
+               se_exp = sqrt(se^2 * exp(coef)^2)) %>%
+        mutate(CI_lower_exp = coef_exp - qnorm(0.975) * se_exp,
+               CI_upper_exp = coef_exp + qnorm(0.975) * se_exp) %>%
+        select(param, coef, se, CI_lower, CI_upper,
+               coef_exp, se_exp, CI_lower_exp, CI_upper_exp, pvalue)
+    }
   }
   
   return(dat)

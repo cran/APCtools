@@ -15,6 +15,10 @@
 #' output.
 #' @param return_plotData If TRUE, the dataset prepared for plotting is
 #' returned. Defaults to FALSE.
+#' @param refCat If TRUE, reference categories are added to the output for
+#' categorical covariates. Defaults to FALSE.
+#' @param ... Additional arguments passed to
+#' \code{\link{extract_summary_linearEffects}}.
 #' 
 #' 
 #' @return ggplot object
@@ -36,7 +40,7 @@
 #' plot_linearEffects(model)
 #' 
 plot_linearEffects <- function(model, variables = NULL,
-                               return_plotData = FALSE) {
+                               return_plotData = FALSE, refCat = FALSE, ...) {
   
   checkmate::assert_class(model, classes = "gam")
   checkmate::assert_character(variables, null.ok = TRUE)
@@ -44,28 +48,73 @@ plot_linearEffects <- function(model, variables = NULL,
   
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
   coef <- CI_lower <- CI_upper <- coef_exp <- CI_lower_exp <- CI_upper_exp <-
-    param <- vargroup <- NULL
+    param <- vargroup <- varnames <- vars <- var_classes <- ref <- new_row <-
+    min_index <- se <- pvalue <- se_exp <- NULL
   
   
-  used_logLink <- model$family[[2]] %in% c("log","logit")
-  ylab         <- ifelse(used_logLink, "Odds Ratio", "Effect")
+  used_logLink <- (model$family[[2]] %in% c("log","logit")) |
+    grepl("Ordered Categorical", model$family[[1]])
+  ylab         <- ifelse(used_logLink, "exp(Effect)", "Effect")
   
   # extract model information
-  plot_dat <- extract_summary_linearEffects(model)
+  plot_dat <- extract_summary_linearEffects(model, ...) %>%
+    mutate(param = as.character(param))
+  plot_dat$vargroup <- NA
   
   # categorize the coefficients in groups (one for each variable)
-  for (i in names(eval(model$call$data))) {
-    plot_dat$vargroup[grepl(i, plot_dat$param)] <- i
+  var_classes <- attributes(model$pterms)$dataClasses[-1]
+  vars <- names(var_classes)
+  for (i in vars) {
+    # potentially more than one coefficient for factor or character variables:
+    if (var_classes[i] %in% c("character", "factor")) {
+      varnames <- paste0(i, unlist(unname(model$xlevels[i])))
+      plot_dat$vargroup[which(plot_dat$param %in% varnames)] <- i
+      
+      # Add information about the reference category:
+      if (refCat == TRUE) {
+        ref <- varnames[!(varnames %in% plot_dat$param)]
+        min_index <- which(plot_dat$param %in% varnames)[1]
+        if (used_logLink == FALSE) {
+          new_row <- c(ref, 0, 0, 0, 0, 0, i)
+          plot_dat <- rbind(plot_dat[1:(min_index - 1), ], new_row,
+                            plot_dat[min_index:nrow(plot_dat), ])
+          plot_dat <- plot_dat %>%
+            mutate(coef = as.numeric(coef), se = as.numeric(se),
+                   CI_lower = as.numeric(CI_lower),
+                   CI_upper = as.numeric(CI_upper), pvalue = as.numeric(pvalue))
+        }
+        else {
+          new_row <- c(ref, 0, 0, 0, 0, 1, 0, 1, 1, 0, i)
+          plot_dat <- rbind(plot_dat[1:(min_index - 1), ], new_row,
+                            plot_dat[min_index:nrow(plot_dat), ])
+          plot_dat <- plot_dat %>%
+            mutate(coef = as.numeric(coef), se = as.numeric(se),
+                   CI_lower = as.numeric(CI_lower),
+                   CI_upper = as.numeric(CI_upper),
+                   coef_exp = as.numeric(coef_exp),
+                   se_exp = as.numeric(se_exp),
+                   CI_lower_exp = as.numeric(CI_lower_exp),
+                   CI_upper_exp = as.numeric(CI_upper_exp),
+                   value = as.numeric(pvalue))
+        }
+        row.names(plot_dat) <- 1:nrow(plot_dat)
+      }
+    }
+    # only a single coefficient for numeric variables
+    else {
+      plot_dat$vargroup[which(plot_dat$param == i)] <- i
+    }
   }
   # remove the intercept
   plot_dat <- plot_dat[-1,]
+  
   # select variables to plot:
   if (!is.null(variables)) {
     plot_dat <- plot_dat %>% filter(vargroup %in% variables)
   }
   # remove the vargroup label from the coefficient labels for categorical variables
-  plot_dat$param <- as.character(plot_dat$param)
-  cat_coefs      <- which(nchar(plot_dat$param) > nchar(plot_dat$vargroup))
+  cat_coefs      <- which(nchar(plot_dat$param) >
+                            nchar(plot_dat$vargroup))
   if (length(cat_coefs) > 0) {
     plot_dat$param[cat_coefs] <- substr(plot_dat$param[cat_coefs],
                                         nchar(plot_dat$vargroup[cat_coefs]) + 1,
@@ -77,15 +126,30 @@ plot_linearEffects <- function(model, variables = NULL,
   plot_dat <- plot_dat %>%
      mutate(vargroup = factor(x = vargroup, levels = var_levels)) %>%
      arrange(vargroup)
+  plot_dat$param <- factor(plot_dat$param, levels = unique(plot_dat$param))
   
   # final preparations
   if (used_logLink) {
-    plot_dat <- plot_dat %>% select(-coef, -CI_lower, -CI_upper) %>%
-      dplyr::rename(coef = coef_exp, CI_lower = CI_lower_exp, CI_upper = CI_upper_exp)
+    if (any(plot_dat$CI_lower_exp < 0)) {
+      warning("Note: After the delta method transformation some values of the
+              lower confidence interval border resulted were negative. These
+              values were set to 0.01")
+      plot_dat$CI_lower_exp[plot_dat$CI_lower_exp < 0] <- 0.01
+    }
+    
+    plot_dat <- plot_dat %>% select(-coef, -se, -CI_lower, -CI_upper) #%>%
+      #dplyr::rename(coef = coef_exp, CI_lower = CI_lower_exp, CI_upper = CI_upper_exp)
   }
   
   if (return_plotData) {
     return(plot_dat)
+  }
+  
+  # rename variables in case of log link:
+  if (used_logLink) {
+    plot_dat <- plot_dat %>%
+      dplyr::rename(coef = coef_exp, CI_lower = CI_lower_exp,
+                    CI_upper = CI_upper_exp)
   }
   
   # create plot
@@ -103,3 +167,6 @@ plot_linearEffects <- function(model, variables = NULL,
     
   return(gg)
 }
+
+
+

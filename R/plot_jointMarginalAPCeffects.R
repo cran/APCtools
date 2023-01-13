@@ -8,10 +8,18 @@
 #' If the model was estimated with a log or logit link, the function
 #' automatically performs an exponential transformation of the effect.
 #' 
+#' Since the plot output created by the function is no \code{ggplot2} object,
+#' but an object created with \code{ggpubr::ggarrange}, the overall theme
+#' of the plot cannot be changed by adding the theme in the form of
+#' '\code{plot_jointMarginalAPCeffects(...) + theme_minimal(...)}'.
+#' Instead, you can call \code{theme_set(theme_minimal(...))} as an individual
+#' call before calling \code{plot_jointMarginalAPCeffects(...)}. The latter
+#' function will then use this global plotting theme.
+#' 
 #' @inheritParams plot_APCheatmap
 #' @param model_list A list of regression models estimated with
 #' \code{\link[mgcv]{gam}} or \code{\link[mgcv]{bam}}. If the list is named, the
-#' names are used as labels.
+#' names are used as labels. Can also be a single model object instead of a list.
 #' @param vlines_list Optional list that can be used to highlight the borders of
 #' specific age groups, time intervals or cohorts. Each element must be a
 #' numeric vector of values on the x-axis where vertical lines should be drawn.
@@ -33,13 +41,16 @@
 #' library(mgcv)
 #' 
 #' data(travel)
+#' 
+#' # plot marginal effects of one model
 #' model_pure <- gam(mainTrip_distance ~ te(age, period), data = travel)
+#' plot_jointMarginalAPCeffects(model_pure, dat = travel)
+#' 
+#' # plot marginal effects of multiple models
 #' model_cov  <- gam(mainTrip_distance ~ te(age, period) + s(household_income),
 #'                   data = travel)
-#' 
 #' model_list <- list("pure model"      = model_pure,
 #'                    "covariate model" = model_cov)
-#' 
 #' plot_jointMarginalAPCeffects(model_list, dat = travel)
 #' 
 #' # mark specific cohorts
@@ -49,7 +60,10 @@
 plot_jointMarginalAPCeffects <- function(model_list, dat, vlines_list = NULL,
                                          ylab = NULL, ylim = NULL) {
   
-  checkmate::assert_list(model_list, types = "gam")
+  checkmate::assert_choice(class(model_list)[1], choices = c("list","gam"))
+  if (class(model_list)[1] == "list") {
+    checkmate::assert_list(model_list, types = "gam")
+  }
   checkmate::assert_data_frame(dat)
   checkmate::assert_list(vlines_list, min.len = 1, max.len = 3,
                          types = "numeric", null.ok = TRUE)
@@ -61,6 +75,11 @@ plot_jointMarginalAPCeffects <- function(model_list, dat, vlines_list = NULL,
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
   effect <- type <- value <- NULL
   
+  
+  # reformat 'model_list' to a list, if only one model object was specified
+  if (class(model_list)[1] == "gam") {
+    model_list <- list(model_list)
+  }
   
   # retrieve model labels
   if (!is.null(names(model_list))) {
@@ -79,9 +98,10 @@ plot_jointMarginalAPCeffects <- function(model_list, dat, vlines_list = NULL,
       dplyr::bind_rows() %>% pull(effect) %>% range()
   }
   
-  used_logLink <- model_list[[1]]$family[[2]] %in% c("log","logit")
+  used_logLink <- (model_list[[1]]$family[[2]] %in% c("log","logit")) |
+    grepl("Ordered Categorical", model_list[[1]]$family[[1]])
   if (is.null(ylab)) {
-    ylab <- ifelse(used_logLink, "Odds Ratio", "Effect")
+    ylab <- ifelse(used_logLink, "exp(Effect)", "Effect")
   }
   
   # base plots
