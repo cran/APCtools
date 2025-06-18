@@ -1,3 +1,23 @@
+# APCtools 1.0.8 (2025-06)
+
+- updated some ggplot2 dependencies in the plot_density functions to prevent the use of now deprecated ggplot2 arguments
+
+# APCtools 1.0.7 (2025-03)
+
+- Slightly optimized the `plot_hexamap` plot borders by adding `xpd = TRUE` to `par()`.
+
+# APCtools 1.0.6 (2024-05)
+
+- Added argument `legend_title` to `plot_APCheatmap`.
+
+# APCtools 1.0.5 (2023-08)
+
+- Added option to plot 95% confidence intervals for marginal APC effects
+in `plot_marginalAPCeffects` and `plot_jointMarginalAPCeffects`
+- Added simple exponentiation of boundaries as second and default option for
+confidence intervals with log link also to `plot_APCheatmap`
+- Fixed a bug in the handling of missing values for APC variables in `plot_APCheatmap`
+
 # APCtools 1.0.4 (2022-12)
 
 - Fixed a bug in `plot_1Dsmooth`, which caused the confidence bounds to be twice as wide as they should be (on the level of the linear predictor)

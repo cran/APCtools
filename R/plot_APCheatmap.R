@@ -53,8 +53,15 @@
 #' Only used if \code{y_var} is specified. Defaults to FALSE.
 #' @param plot_CI Indicator if the confidence intervals should be plotted.
 #' Only used if \code{y_var} is not specified. Defaults to TRUE.
+#' @param method_expTransform One of \code{c("simple","delta")}, stating if
+#' confidence interval limits should be transformed by
+#' a simple exp transformation or using the delta method. The delta method can
+#' be unstable in situations and lead to negative confidence interval limits.
+#' Only used when the model was estimated with a log or logit link and
+#' confidence intervals are supposed to be plotted. Defaults to \code{simple}.
 #' @param legend_limits Optional numeric vector passed as argument \code{limits}
 #' to \code{\link[ggplot2]{scale_fill_gradient2}}.
+#' @param legend_title Optional character legend title.
 #' 
 #' @return Plot grid created with \code{\link[ggpubr]{ggarrange}} (if
 #' \code{plot_CI} is TRUE) or a \code{ggplot2} object (if \code{plot_CI} is
@@ -126,7 +133,8 @@ plot_APCheatmap <- function(dat, y_var = NULL, model = NULL,
                             markLines_list = NULL,
                             markLines_displayLabels = c("age","period","cohort"),
                             y_var_logScale = FALSE, plot_CI = TRUE,
-                            legend_limits = NULL) {
+                            method_expTransform = "simple",
+                            legend_limits = NULL, legend_title = NULL) {
   
   checkmate::assert_data_frame(dat)
   checkmate::assert_true(!is.null(y_var) | !is.null(model))
@@ -149,7 +157,9 @@ plot_APCheatmap <- function(dat, y_var = NULL, model = NULL,
   checkmate::assert_subset(markLines_displayLabels, choices = c("age","period","cohort"))
   checkmate::assert_logical(y_var_logScale, len = 1)
   checkmate::assert_logical(plot_CI, len = 1)
+  checkmate::assert_choice(method_expTransform, choices = c("simple","delta"))
   checkmate::assert_numeric(legend_limits, len = 2, null.ok = TRUE)
+  checkmate::assert_character(legend_title, len = 1, null.ok = TRUE)
   
   
   # some NULL definitions to appease CRAN checks regarding use of dplyr/ggplot2
@@ -189,8 +199,10 @@ plot_APCheatmap <- function(dat, y_var = NULL, model = NULL,
     
     plot_CI      <- FALSE
     used_logLink <- FALSE
-    legend_title <- ifelse(!y_var_logScale, paste0("average ",y_var),
-                           paste0("average log10(",y_var,")"))
+    if (is.null(legend_title)) {
+      legend_title <- ifelse(!y_var_logScale, paste0("average ",y_var),
+                             paste0("average log10(",y_var,")"))
+    }
     y_trans      <- "identity"
     
     
@@ -225,23 +237,43 @@ plot_APCheatmap <- function(dat, y_var = NULL, model = NULL,
       mutate(effect = as.vector(prediction$fit),
              se     = as.vector(prediction$se.fit)) %>% 
       mutate(effect = effect - mean(effect)) %>% 
-      mutate(lower  = effect - qnorm(0.95) * se,
-             upper  = effect + qnorm(0.95) * se)
+      mutate(lower  = effect - qnorm(0.975) * se,
+             upper  = effect + qnorm(0.975) * se)
     
     used_logLink <- (model$family[[2]] %in% c("log","logit")) |
       grepl("Ordered Categorical", model$family[[1]])
-    legend_title <- ifelse(used_logLink, "Mean exp effect", "Mean effect")
+    if (is.null(legend_title)) {
+      legend_title <- ifelse(used_logLink, "Mean exp effect", "Mean effect")
+    }
     y_trans      <- ifelse(used_logLink, "log", "identity")
     
+    # Create lower and upper confidence surfaces:
     if (used_logLink) {
-      plot_dat <- plot_dat %>% 
-        mutate(exp_effect = exp(effect),
-               exp_se     = sqrt((se^2) * (exp_effect^2))) %>% 
-        mutate(exp_lower  = exp_effect - qnorm(0.975) * exp_se,
-               exp_upper  = exp_effect + qnorm(0.975) * exp_se) %>% 
-        select(-effect, -se, -upper, -lower) %>% 
-        dplyr::rename(effect = exp_effect, se = exp_se,
-                      upper  = exp_upper, lower = exp_lower)
+      if (method_expTransform == "simple") {
+        plot_dat <- plot_dat %>%
+          mutate(exp_effect = exp(effect),
+                 exp_lower = exp(lower),
+                 exp_upper = exp(upper)) %>%
+          select(-effect, -se, -upper, -lower) %>% 
+          dplyr::rename(effect = exp_effect, upper  = exp_upper,
+                        lower = exp_lower)
+      }
+      else { # method_expTransform == "delta"
+        plot_dat <- plot_dat %>% 
+          mutate(exp_effect = exp(effect),
+                 exp_se     = sqrt((se^2) * (exp_effect^2))) %>% 
+          mutate(exp_lower  = exp_effect - qnorm(0.975) * exp_se,
+                 exp_upper  = exp_effect + qnorm(0.975) * exp_se) %>% 
+          select(-effect, -se, -upper, -lower) %>% 
+          dplyr::rename(effect = exp_effect, se = exp_se,
+                        upper  = exp_upper, lower = exp_lower)
+      }
+      if (any(plot_dat$lower < 0)) {
+        warning("Note: After the delta method transformation some values of the
+              lower confidence surface were negative. These
+              values were set to 0.01")
+        plot_dat$lower[plot_dat$lower < 0] <- 0.01
+      }
     }
     
   }
@@ -446,18 +478,18 @@ gg_addReferenceLines <- function(gg_list, dimensions, plot_dat, markLines_list,
     # create a dataset for the line segments
     dat_segments <- lapply(markLines_list[[dim_3]], function(z) {
       
-      data.frame(x_start = case_when(dim_3 == "cohort" & dimensions[1] == "period" ~ min(plot_dat$y) + z,
-                                     dim_3 == "cohort" & dimensions[1] == "age"    ~ min(plot_dat$y) - z,
-                                     dim_3 == "period"                             ~ z - min(plot_dat$y),
-                                     dim_3 == "age"    & dimensions[1] == "cohort" ~ min(plot_dat$y) - z,
-                                     dim_3 == "age"    & dimensions[1] == "period" ~ min(plot_dat$y) + z),
-                 x_end   = case_when(dim_3 == "cohort" & dimensions[1] == "period" ~ max(plot_dat$y) + z,
-                                     dim_3 == "cohort" & dimensions[1] == "age"    ~ max(plot_dat$y) - z,
-                                     dim_3 == "period"                             ~ z - max(plot_dat$y),
-                                     dim_3 == "age"    & dimensions[1] == "cohort" ~ max(plot_dat$y) - z,
-                                     dim_3 == "age"    & dimensions[1] == "period" ~ max(plot_dat$y) + z),
-                 y_start = min(plot_dat$y),
-                 y_end   = max(plot_dat$y),
+      data.frame(x_start = case_when(dim_3 == "cohort" & dimensions[1] == "period" ~ min(plot_dat$y, na.rm = TRUE) + z,
+                                     dim_3 == "cohort" & dimensions[1] == "age"    ~ min(plot_dat$y, na.rm = TRUE) - z,
+                                     dim_3 == "period"                             ~ z - min(plot_dat$y, na.rm = TRUE),
+                                     dim_3 == "age"    & dimensions[1] == "cohort" ~ min(plot_dat$y, na.rm = TRUE) - z,
+                                     dim_3 == "age"    & dimensions[1] == "period" ~ min(plot_dat$y, na.rm = TRUE) + z),
+                 x_end   = case_when(dim_3 == "cohort" & dimensions[1] == "period" ~ max(plot_dat$y, na.rm = TRUE) + z,
+                                     dim_3 == "cohort" & dimensions[1] == "age"    ~ max(plot_dat$y, na.rm = TRUE) - z,
+                                     dim_3 == "period"                             ~ z - max(plot_dat$y, na.rm = TRUE),
+                                     dim_3 == "age"    & dimensions[1] == "cohort" ~ max(plot_dat$y, na.rm = TRUE) - z,
+                                     dim_3 == "age"    & dimensions[1] == "period" ~ max(plot_dat$y, na.rm = TRUE) + z),
+                 y_start = min(plot_dat$y, na.rm = TRUE),
+                 y_end   = max(plot_dat$y, na.rm = TRUE),
                  group   = ifelse(match(z, markLines_list[[dim_3]]) == 1,
                                   paste(capitalize_firstLetter(dim_3), z),
                                   as.character(z)))
